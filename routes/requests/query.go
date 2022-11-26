@@ -1,19 +1,18 @@
 package requests
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	es8 "github.com/elastic/go-elasticsearch/v8"
-	"github.com/google/uuid"
 	jsoniter "github.com/json-iterator/go"
+	zinc "github.com/zinclabs/sdk-go-zincsearch"
 	"net/http"
+	"sofa-logs-servers/infra/zincsearch"
 	"sofa-logs-servers/models"
 	"sofa-logs-servers/utils"
 )
 
 type FindForm struct {
-	RequestID uuid.UUID `json:"request_id"`
+	RequestID string `json:"request_id"`
 }
 
 type RespFind struct {
@@ -35,7 +34,7 @@ type RespFind struct {
 	}
 }
 
-func FindById(w http.ResponseWriter, r *http.Request, client *es8.Client) {
+func FindById(w http.ResponseWriter, r *http.Request, zincClient zincsearch.ZincClient) {
 	defer func() {
 		err := r.Body.Close()
 		if err != nil {
@@ -50,104 +49,70 @@ func FindById(w http.ResponseWriter, r *http.Request, client *es8.Client) {
 		return
 	}
 
-	if form.RequestID.String() == "" {
-		utils.WriteErr(w, "UUID EMPTY !!!", http.StatusBadRequest)
+	if form.RequestID == "" {
+		utils.WriteErr(w, "REQUEST ID EMPTY !!!", http.StatusBadRequest)
 		return
 	}
 
-	var buff bytes.Buffer
-	query := map[string]interface{}{
-		"query": map[string]interface{}{
-			"match": map[string]interface{}{
-				"_id": form.RequestID.String(),
-			},
-		},
-	}
+	query := *zinc.NewMetaZincQuery() // V1ZincQuery | Query
+	metaQuery := *zinc.NewMetaTermQuery()
+	metaQuery.SetValue(form.RequestID)
+	subQuery := *zinc.NewMetaQuery()
+	subQuery.SetTerm(map[string]zinc.MetaTermQuery{
+		"_id": metaQuery,
+	})
 
-	err = jsoniter.NewEncoder(&buff).Encode(query)
+	query.SetQuery(subQuery)
+
+	_, res, err := zincClient.Client.Search.Search(zincClient.Ctx, "requests").Query(query).Execute()
+	fmt.Println(res)
 	if err != nil {
-		utils.WriteErr(w, "ERROR ENCODING QUERY", http.StatusInternalServerError)
-		return
-	}
-
-	resp, err := client.Search(
-		client.Search.WithIndex("requests"),
-		client.Search.WithBody(&buff),
-		client.Search.WithTrackScores(true),
-		client.Search.WithPretty(),
-	)
-
-	defer func() {
-		err := resp.Body.Close()
-		if err != nil {
-			panic(err)
-		}
-	}()
-
-	if err != nil {
-		utils.WriteErr(w, "ERROR Seearching For Request", http.StatusInternalServerError)
-
-	}
-
-	if resp.IsError() {
-		utils.WriteErr(w, "Error parsing the response body", http.StatusBadRequest)
-		return
-	}
-
-	resDecoded := RespFind{}
-
-	if err := json.NewDecoder(resp.Body).Decode(&resDecoded); err != nil {
-		utils.WriteErr(w, "ERROR PARSING RESPONSE", http.StatusInternalServerError)
-		return
-	}
-
-	utils.WriteJson(w, resDecoded.Hits.Hits[0])
-
-	fmt.Println(resp)
-
-}
-
-func FindAll(w http.ResponseWriter, _ *http.Request, client *es8.Client) {
-
-	var (
-		buff bytes.Buffer
-	)
-	query := map[string]interface{}{
-		"query": map[string]interface{}{
-			"match_all": map[string]interface{}{},
-		},
-	}
-
-	err := jsoniter.NewEncoder(&buff).Encode(query)
-	if err != nil {
-		utils.WriteErr(w, "ERROR ENCODING QUERY", http.StatusInternalServerError)
-		return
-	}
-
-	resp, err := client.Search(
-		client.Search.WithIndex("requests"),
-		client.Search.WithBody(&buff),
-		client.Search.WithTrackScores(true),
-		client.Search.WithPretty(),
-	)
-	defer func() {
-		err := resp.Body.Close()
-		if err != nil {
-			panic(err)
-		}
-	}()
-
-	if err != nil {
-		utils.WriteErr(w, "ERROR SEARCHING FOR REQUESTS", http.StatusInternalServerError)
-	}
-
-	if resp.IsError() {
 		utils.WriteErr(w, "Error searching the Document", http.StatusBadRequest)
 		return
 	}
 
+	defer func() {
+		err := res.Body.Close()
+		if err != nil {
+			panic(err)
+		}
+	}()
+
 	resDecoded := RespFind{}
-	if err := json.NewDecoder(resp.Body).Decode(&resDecoded); err != nil {
+
+	if err := json.NewDecoder(res.Body).Decode(&resDecoded); err != nil {
+		utils.WriteErr(w, "ERROR PARSING RESPONSE", http.StatusInternalServerError)
+		return
+	}
+
+	utils.WriteJson(w, resDecoded.Hits.Hits)
+
+}
+
+func FindAll(w http.ResponseWriter, _ *http.Request, zincClient zincsearch.ZincClient) {
+
+	query := *zinc.NewMetaZincQuery() // V1ZincQuery | Query
+	subQuery := *zinc.NewMetaQuery()
+	subQuery.SetMatchAll(map[string]interface {
+	}{})
+	query.SetQuery(subQuery)
+
+	_, res, err := zincClient.Client.Search.Search(zincClient.Ctx, "requests").Query(query).Execute()
+
+	if err != nil {
+		utils.WriteErr(w, "Error searching the Document", http.StatusBadRequest)
+		return
+	}
+
+	defer func() {
+		err := res.Body.Close()
+		if err != nil {
+			panic(err)
+		}
+	}()
+
+	resDecoded := RespFind{}
+	if err := json.NewDecoder(res.Body).Decode(&resDecoded); err != nil {
 		utils.WriteErr(w, "ERROR PARSING RESPONSE FROM ELASTIC", http.StatusInternalServerError)
 		return
 	}

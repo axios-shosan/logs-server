@@ -3,10 +3,10 @@ package transactions
 import (
 	"bytes"
 	"context"
-	es8 "github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 	"github.com/google/uuid"
 	jsoniter "github.com/json-iterator/go"
+	es8 "github.com/zincsearch/go-elasticsearch/v8"
 	"net/http"
 	"sofa-logs-servers/models"
 	"sofa-logs-servers/utils"

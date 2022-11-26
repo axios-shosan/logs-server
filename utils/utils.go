@@ -1,9 +1,9 @@
 package utils
 
 import (
-	es8 "github.com/elastic/go-elasticsearch/v8"
 	jsoniter "github.com/json-iterator/go"
 	"net/http"
+	"sofa-logs-servers/infra/zincsearch"
 )
 
 type ErrorForm struct {
@@ -11,10 +11,12 @@ type ErrorForm struct {
 	Message    string `json:"message"`
 }
 
-func Middleware(next func(w http.ResponseWriter, r *http.Request, es *es8.Client), es *es8.Client) http.HandlerFunc {
+func Middleware(
+	next func(w http.ResponseWriter, r *http.Request, zincClient zincsearch.ZincClient), zincClient zincsearch.ZincClient,
+) http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		next(w, r, es)
+		next(w, r, zincClient)
 	}
 }
 

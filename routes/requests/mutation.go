@@ -1,33 +1,28 @@
 package requests
 
 import (
-	"bytes"
-	"context"
-	"fmt"
 	"net/http"
+	"sofa-logs-servers/infra/zincsearch"
 	"sofa-logs-servers/models"
 	"sofa-logs-servers/utils"
 	"time"
 
-	es8 "github.com/elastic/go-elasticsearch/v8"
-	"github.com/elastic/go-elasticsearch/v8/esapi"
-	"github.com/google/uuid"
 	jsoniter "github.com/json-iterator/go"
 )
 
 type CreateForm struct {
-	UserID    uint   `json:"user_id"`
-	Page      string `json:"page"`
-	StartedAt string `json:"started_at"`
-	EndedAt   string `json:"ended_at"`
+	UserID    uint      `json:"user_id"`
+	Page      string    `json:"page"`
+	StartedAt time.Time `json:"started_at"`
+	EndedAt   time.Time `json:"ended_at"`
 }
 
 type UpdateForm struct {
-	ID        string `json:"request_id"`
-	UserID    uint   `json:"user_id"`
-	Page      string `json:"page"`
-	StartedAt string `json:"started_at"`
-	EndedAt   string `json:"ended_at"`
+	ID        string    `json:"request_id"`
+	UserID    uint      `json:"user_id"`
+	Page      string    `json:"page"`
+	StartedAt time.Time `json:"started_at"`
+	EndedAt   time.Time `json:"ended_at"`
 }
 
 type DeleteFrom struct {
@@ -41,7 +36,7 @@ type UpdateReq struct {
 	EndedAt   string `json:"ended_at"`
 }
 
-type RespMutation struct {
+type CreateRes struct {
 	Index   string `json:"_index"`
 	Id      string `json:"_id"`
 	Version int    `json:"_version"`
@@ -55,7 +50,7 @@ type RespMutation struct {
 	PrimaryTerm int `json:"_primary_term"`
 }
 
-func Create(w http.ResponseWriter, r *http.Request, client *es8.Client) {
+func Create(w http.ResponseWriter, r *http.Request, zincClient zincsearch.ZincClient) {
 
 	defer func() {
 		err := r.Body.Close()
@@ -71,81 +66,49 @@ func Create(w http.ResponseWriter, r *http.Request, client *es8.Client) {
 		return
 	}
 
-	startedAt, err := time.Parse(time.RFC3339, form.StartedAt)
-	if err != nil {
-		utils.WriteErr(w, "BAD DATE FORMAT", http.StatusBadRequest)
-		return
-	}
-
-	endedAt, err := time.Parse(time.RFC3339, form.EndedAt)
-	if err != nil {
-		utils.WriteErr(w, "BAD DATE FORMAT", http.StatusBadRequest)
-		return
-	}
-
-	logForm := models.Log{
-		UserID:    form.UserID,
-		Page:      form.Page,
-		StartedAt: startedAt,
-		EndedAt:   endedAt,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-
-	if logForm.Page == "" {
+	if form.Page == "" {
 		utils.WriteErr(w, "EMPTY Page", http.StatusBadRequest)
 		return
 	}
 
-	if logForm.StartedAt.IsZero() {
+	if form.StartedAt.IsZero() {
 		utils.WriteErr(w, "EMPTY Start Request Time", http.StatusBadRequest)
 	}
 
-	if logForm.EndedAt.IsZero() {
+	if form.EndedAt.IsZero() {
 		utils.WriteErr(w, "EMPTY End Request Time", http.StatusBadRequest)
 	}
 
-	f, err := jsoniter.Marshal(logForm)
-	if err != nil {
-		utils.WriteErr(w, "can't parse body data to json", http.StatusBadRequest)
-		return
-	}
+	document := map[string]interface{}{
+		"UserID":    form.UserID,
+		"Page":      form.Page,
+		"StartedAt": form.StartedAt,
+		"EndedAt":   form.EndedAt,
+		"CreatedAt": time.Now(),
+		"UpdatedAt": time.Now(),
+	} // map[string]interface{} | Document
 
-	request := esapi.IndexRequest{
-		Index:      "requests",
-		DocumentID: uuid.New().String(),
-		Body:       bytes.NewReader(f),
-	}
-
-	resp, err := request.Do(context.Background(), client)
-	defer func() {
-		err := resp.Body.Close()
-		if err != nil {
-			panic(err)
-		}
-	}()
+	_, res, err := zincClient.Client.Document.Index(zincClient.Ctx, "requests").Document(document).Execute()
 
 	if err != nil {
-		utils.WriteErr(w, "Could not send Request to Elastic Client", http.StatusBadRequest)
+		utils.WriteErr(w, "Could not send Request to zinc-search Client", http.StatusBadRequest)
 		return
 	}
 
-	fmt.Println(resp)
-
-	if resp.IsError() {
-		utils.WriteErr(w, "Error Creating the Document", http.StatusBadRequest)
+	if res.StatusCode != 200 {
+		utils.WriteErr(w, "BAD RESPONSE FROM ZINC WHILE CREATING DOCUMENT", http.StatusBadRequest)
 		return
 	}
 
-	respDecoded := RespMutation{}
-	err = jsoniter.NewDecoder(resp.Body).Decode(&respDecoded)
+	respDecoded := CreateRes{}
+	err = jsoniter.NewDecoder(res.Body).Decode(&respDecoded)
 	if err != nil {
 		utils.WriteErr(w, "ERROR PARSING RESPONSE FROM ELASTIC", http.StatusInternalServerError)
 	}
 	utils.WriteJson(w, respDecoded)
 }
 
-func Update(w http.ResponseWriter, r *http.Request, client *es8.Client) {
+func Update(w http.ResponseWriter, r *http.Request, zincClient zincsearch.ZincClient) {
 	defer func() {
 		err := r.Body.Close()
 		if err != nil {
@@ -161,23 +124,12 @@ func Update(w http.ResponseWriter, r *http.Request, client *es8.Client) {
 		return
 	}
 
-	startedAt, err := time.Parse(time.RFC3339, form.StartedAt)
-	if err != nil {
-		utils.WriteErr(w, "BAD DATE FORMAT", http.StatusBadRequest)
-		return
-	}
-
-	endedAt, err := time.Parse(time.RFC3339, form.EndedAt)
-	if err != nil {
-		utils.WriteErr(w, "BAD DATE FORMAT", http.StatusBadRequest)
-		return
-	}
-
+	//
 	logForm := models.Log{
-		UserID: form.UserID,
-		Page: form.Page,
-		StartedAt: startedAt,
-		EndedAt: endedAt,
+		UserID:    form.UserID,
+		Page:      form.Page,
+		StartedAt: form.StartedAt,
+		EndedAt:   form.EndedAt,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -200,40 +152,31 @@ func Update(w http.ResponseWriter, r *http.Request, client *es8.Client) {
 		utils.WriteErr(w, "EMPTY End Request Time", http.StatusBadRequest)
 	}
 
-	//encode the form to update the index
+	document := map[string]interface{}{
+		"UserID":    form.UserID,
+		"Page":      form.Page,
+		"StartedAt": form.StartedAt,
+		"EndedAt":   form.EndedAt,
+		"UpdatedAt": time.Now(),
+	} // map[string]interface{} | Document
 
-	//remove the ID field from form
+	_, res, err := zincClient.Client.Document.Update(zincClient.Ctx, "requests", form.ID).Document(document).Execute()
 
-	reqEncoded, err := jsoniter.Marshal(logForm)
 	if err != nil {
-		utils.WriteErr(w, "CAN'T PARSE BODY DATA TO JSON", http.StatusBadRequest)
-	}
-	request := esapi.UpdateRequest{
-		Index:      "requests",
-		DocumentID: form.ID,
-		Body:       bytes.NewReader([]byte(fmt.Sprintf(`{"doc":%s}`, reqEncoded))),
-	}
-
-	resp, err := request.Do(context.Background(), client)
-	if err != nil {
-		utils.WriteErr(w, "Could not send Request to Elastic Client", http.StatusBadRequest)
+		utils.WriteErr(w, "Could not send Request to zinc-search Client", http.StatusBadRequest)
 		return
 	}
 
-	if resp.IsError() {
-		utils.WriteErr(w, "UPDATING DOCUMENT FAILED", http.StatusBadRequest)
+	if res.StatusCode != 200 {
+		utils.WriteErr(w, "BAD RESPONSE FROM ZINC WHILE UPDATING DOCUMENT", http.StatusBadRequest)
 		return
 	}
 
-	respDecoded := RespMutation{}
-	err = jsoniter.NewDecoder(resp.Body).Decode(&respDecoded)
-	if err != nil {
-		utils.WriteErr(w, "ERROR PARSING RESPONSE FROM ELASTIC", http.StatusInternalServerError)
-	}
-	utils.WriteJson(w, respDecoded)
+	utils.WriteJson(w, "Log Updated")
+
 }
 
-func Delete(w http.ResponseWriter, r *http.Request, client *es8.Client) {
+func Delete(w http.ResponseWriter, r *http.Request, zincClient zincsearch.ZincClient) {
 	defer func() {
 		err := r.Body.Close()
 		if err != nil {
@@ -253,26 +196,16 @@ func Delete(w http.ResponseWriter, r *http.Request, client *es8.Client) {
 		return
 	}
 
-	request := esapi.DeleteRequest{
-		Index:      "requests",
-		DocumentID: form.ID,
-	}
-
-	resp, err := request.Do(context.Background(), client)
+	_, res, err := zincClient.Client.Document.Delete(zincClient.Ctx, "requests", form.ID).Execute()
 	if err != nil {
-		utils.WriteErr(w, "Could not send Request to Elastic Client", http.StatusBadRequest)
+		utils.WriteErr(w, "Error deleting the Document", http.StatusBadRequest)
 		return
 	}
 
-	if resp.IsError() {
-		utils.WriteErr(w, "DELETING DOCUMENT FAILED", http.StatusBadRequest)
+	if res.StatusCode != 200 {
+		utils.WriteErr(w, "BAD RESPONSE FROM ZINC WHILE DELETING DOCUMENT", http.StatusBadRequest)
 		return
 	}
 
-	respDecoded := RespMutation{}
-	err = jsoniter.NewDecoder(resp.Body).Decode(&respDecoded)
-	if err != nil {
-		utils.WriteErr(w, "ERROR PARSING RESPONSE FROM ELASTIC", http.StatusInternalServerError)
-	}
-	utils.WriteJson(w, respDecoded)
+	utils.WriteJson(w, "Document Deleted")
 }
