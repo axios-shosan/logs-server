@@ -9,6 +9,7 @@ import (
 	"sofa-logs-servers/infra/zincsearch"
 	"sofa-logs-servers/models"
 	"sofa-logs-servers/utils"
+	"time"
 )
 
 type FindForm struct {
@@ -26,10 +27,11 @@ type RespFind struct {
 		} `json:"total"`
 		MaxScore float64 `json:"max_score"`
 		Hits     []struct {
-			Index  string     `json:"_index"`
-			Id     string     `json:"_id"`
-			Score  float64    `json:"_score"`
-			Source models.Log `json:"_source"`
+			Index     string     `json:"_index"`
+			Id        string     `json:"_id"`
+			Score     float64    `json:"_score"`
+			Timestamp time.Time  `json:"@timestamp"`
+			Source    models.Log `json:"_source"`
 		}
 	}
 }

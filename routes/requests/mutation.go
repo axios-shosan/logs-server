@@ -3,7 +3,6 @@ package requests
 import (
 	"net/http"
 	"sofa-logs-servers/infra/zincsearch"
-	"sofa-logs-servers/models"
 	"sofa-logs-servers/utils"
 	"time"
 
@@ -27,13 +26,6 @@ type UpdateForm struct {
 
 type DeleteFrom struct {
 	ID string `json:"request_id"`
-}
-
-type UpdateReq struct {
-	UserID    uint   `json:"user_id"`
-	Page      string `json:"page"`
-	StartedAt string `json:"started_at"`
-	EndedAt   string `json:"ended_at"`
 }
 
 type CreateRes struct {
@@ -84,8 +76,6 @@ func Create(w http.ResponseWriter, r *http.Request, zincClient zincsearch.ZincCl
 		"Page":      form.Page,
 		"StartedAt": form.StartedAt,
 		"EndedAt":   form.EndedAt,
-		"CreatedAt": time.Now(),
-		"UpdatedAt": time.Now(),
 	} // map[string]interface{} | Document
 
 	_, res, err := zincClient.Client.Document.Index(zincClient.Ctx, "requests").Document(document).Execute()
@@ -124,31 +114,21 @@ func Update(w http.ResponseWriter, r *http.Request, zincClient zincsearch.ZincCl
 		return
 	}
 
-	//
-	logForm := models.Log{
-		UserID:    form.UserID,
-		Page:      form.Page,
-		StartedAt: form.StartedAt,
-		EndedAt:   form.EndedAt,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-
 	if form.ID == "" {
 		utils.WriteErr(w, "request_id IS REQUIRED", http.StatusBadRequest)
 		return
 	}
 
-	if logForm.Page == "" {
+	if form.Page == "" {
 		utils.WriteErr(w, "page IS REQUIRED", http.StatusBadRequest)
 		return
 	}
 
-	if logForm.StartedAt.IsZero() {
+	if form.StartedAt.IsZero() {
 		utils.WriteErr(w, "EMPTY Start Request Time", http.StatusBadRequest)
 	}
 
-	if logForm.EndedAt.IsZero() {
+	if form.EndedAt.IsZero() {
 		utils.WriteErr(w, "EMPTY End Request Time", http.StatusBadRequest)
 	}
 
@@ -157,7 +137,6 @@ func Update(w http.ResponseWriter, r *http.Request, zincClient zincsearch.ZincCl
 		"Page":      form.Page,
 		"StartedAt": form.StartedAt,
 		"EndedAt":   form.EndedAt,
-		"UpdatedAt": time.Now(),
 	} // map[string]interface{} | Document
 
 	_, res, err := zincClient.Client.Document.Update(zincClient.Ctx, "requests", form.ID).Document(document).Execute()
