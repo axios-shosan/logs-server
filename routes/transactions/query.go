@@ -2,7 +2,6 @@ package transactions
 
 import (
 	"encoding/json"
-	"fmt"
 	jsoniter "github.com/json-iterator/go"
 	zinc "github.com/zinclabs/sdk-go-zincsearch"
 	"net/http"
@@ -19,6 +18,14 @@ type FindByIdForm struct {
 type FindAllForm struct {
 	StartDate time.Time `json:"start_date"`
 	EndDate   time.Time `json:"end_date"`
+}
+
+type FindAllReturn struct {
+	ID        string    `json:"id"`
+	Amount    uint      `json:"amount"`
+	Date      time.Time `json:"date"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type RespFind struct {
@@ -42,7 +49,6 @@ type RespFind struct {
 }
 
 func FindAll(w http.ResponseWriter, r *http.Request, zincClient zincsearch.ZincClient) {
-	fmt.Println(r.Body)
 	defer func() {
 		err := r.Body.Close()
 		if err != nil {
@@ -86,11 +92,17 @@ func FindAll(w http.ResponseWriter, r *http.Request, zincClient zincsearch.ZincC
 		return
 	}
 
-	var returnedArray []models.Transaction
-	fmt.Println(form.StartDate, form.EndDate)
+	var returnedArray []FindAllReturn
+
 	for _, hit := range resDecoded.Hits.Hits {
 		if hit.Source.Date.After(form.StartDate) && hit.Source.Date.Before(form.EndDate) {
-			returnedArray = append(returnedArray, hit.Source)
+			returnedArray = append(returnedArray, FindAllReturn{
+				ID:        hit.Id,
+				Amount:    hit.Source.Amount,
+				Date:      hit.Source.Date,
+				CreatedAt: hit.Source.CreatedAt,
+				UpdatedAt: hit.Timestamp,
+			})
 		}
 	}
 
@@ -129,7 +141,6 @@ func FindById(w http.ResponseWriter, r *http.Request, zincClient zincsearch.Zinc
 	query.SetQuery(subQuery)
 
 	_, res, err := zincClient.Client.Search.Search(zincClient.Ctx, "transactions").Query(query).Execute()
-	fmt.Println(res)
 	if err != nil {
 		utils.WriteErr(w, "Error searching the Document", http.StatusBadRequest)
 		return

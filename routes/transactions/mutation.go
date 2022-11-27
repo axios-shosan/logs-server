@@ -28,9 +28,10 @@ type RespMutation struct {
 }
 
 type UpdateForm struct {
-	ID     string    `json:"transaction_id"`
-	Amount uint      `json:"amount"`
-	Date   time.Time `json:"date"`
+	ID        string    `json:"transaction_id"`
+	Amount    uint      `json:"amount"`
+	Date      time.Time `json:"date"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type DeleteFrom struct {
@@ -77,8 +78,9 @@ func Create(w http.ResponseWriter, r *http.Request, zincClient zincsearch.ZincCl
 	}
 
 	document := map[string]interface{}{
-		"Amount": form.Amount,
-		"Date":   form.Date,
+		"Amount":    form.Amount,
+		"Date":      form.Date,
+		"CreatedAt": time.Now(),
 	} // map[string]interface{} | Document
 
 	_, res, err := zincClient.Client.Document.Index(zincClient.Ctx, "transactions").Document(document).Execute()
@@ -125,17 +127,24 @@ func Update(w http.ResponseWriter, r *http.Request, zincClient zincsearch.ZincCl
 	}
 
 	if form.Date.IsZero() {
-		utils.WriteErr(w, "Date IS REQUIRED", http.StatusBadRequest)
+		utils.WriteErr(w, "DATE IS REQUIRED", http.StatusBadRequest)
 		return
 	}
 
 	if form.Amount == 0 {
-		utils.WriteErr(w, "EMPTY Start Request Time", http.StatusBadRequest)
+		utils.WriteErr(w, "AMOUNT IS REQUIRED", http.StatusBadRequest)
+		return
+	}
+
+	if form.CreatedAt.IsZero() {
+		utils.WriteErr(w, "CREATED_AT IS REQUIRED", http.StatusBadRequest)
+		return
 	}
 
 	document := map[string]interface{}{
-		"Date":   form.Date,
-		"Amount": form.Amount,
+		"Date":       form.Date,
+		"Amount":     form.Amount,
+		"created_at": form.CreatedAt,
 	} // map[string]interface{} | Document
 
 	_, res, err := zincClient.Client.Document.Update(zincClient.Ctx, "transactions", form.ID).Document(document).Execute()
